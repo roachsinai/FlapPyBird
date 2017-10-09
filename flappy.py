@@ -56,6 +56,168 @@ try:
 except NameError:
     xrange = range
 
+from sklearn.neural_network import MLPRegressor
+
+
+import numpy as np
+from random import shuffle
+from itertools import accumulate
+import math
+import copy
+
+class Bird:
+
+    def __init__(self, brain = None):
+        
+
+        if brain is None:
+            initDataX = [ [BASEY, 0], [-BASEY, 0], [BASEY, 200], [-BASEY, 200] ]
+            initDatay = [ 1, 0, 1, 0 ]
+            for i in range(50, int(BASEY), 100):
+                initDataX.append([i, 0])
+                initDatay.append(1)
+
+                initDataX.append([-i, 0])
+                initDatay.append(0)
+
+                initDataX.append([i, 100])
+                initDatay.append(1)
+
+                initDataX.append([-i, 100])
+                initDatay.append(0)
+
+                initDataX.append([-i, 150])
+                initDatay.append(0)
+
+            self.brain = MLPRegressor(hidden_layer_sizes=(6, ), max_iter=10)
+            self.brain.fit(initDataX, initDatay)
+
+            self.brain.out_activation_ = "logistic"
+        else:
+            self.brain = copy.deepcopy(brain)
+
+        self.score = 0
+
+    def isJump(self, X):
+        yPredict = self.brain.predict(X)
+        return yPredict[0] > 0.5
+
+    def decisionGenerator(self):
+        count = 0
+        dna = [0, 0, 1, 1]
+        while True:
+            if count <= 0:
+                shuffle(dna)
+                count = len(dna)
+            count -= 1
+            yield dna[count]
+
+    def mutateDecisionGenerator(self):
+        count = 0
+        dna = [0, 0, 1]
+        while True:
+            if count <= 0:
+                shuffle(dna)
+                count = len(dna)
+            count -= 1
+            yield dna[count]
+
+    # cross over
+    def birth(self, other):
+        son = Bird(self.brain)
+
+        for ilyr in range(self.brain.n_layers_):
+            for i in range(len(self.brain.coefs_)):
+                for j in range(len(self.brain.coefs_[i])):
+                    if next(self.decisionGenerator()):
+                        son.brain.coefs_[i][j] = other.brain.coefs_[i][j]
+
+        for ilyr in range(self.brain.n_layers_):
+            for i in range(len(self.brain.intercepts_)):
+                if next(self.decisionGenerator()):
+                    son.brain.intercepts_[i] = other.brain.intercepts_[i]
+
+        return son
+
+    def mutate(self):
+        for ilyr in range(self.brain.n_layers_):
+            for i in range(len(self.brain.coefs_)):
+                for j in range(len(self.brain.coefs_[i])):
+                    if next(self.mutateDecisionGenerator()):
+                        self.brain.coefs_[i][j] += random.randint(1, 10) / 10 * (next(self.decisionGenerator()) * 2 - 1)
+
+        for ilyr in range(self.brain.n_layers_):
+            for i in range(len(self.brain.intercepts_)):
+                if next(self.mutateDecisionGenerator()):
+                    self.brain.intercepts_[i] += random.randint(1, 10) / 10 * (next(self.decisionGenerator()) * 2 - 1)
+
+
+class BirdsPopulation(list):
+
+    def __init__(self, birdsCount = -1, birds = None):
+        if (birdsCount < 0):
+            self.birdsCount = len(birds)
+        else:
+            self.birdsCount = birdsCount
+        if (birds is None):
+            self.birds = [ Bird() for i in range(birdsCount) ]
+        else:
+            self.birds = birds
+
+    def __getitem__(self, key):
+        return self.birds[key]
+
+    def __setitem__(self, key, item):
+        self.birds[key] = item
+
+    def split(self, ratioNumber, actualSize):
+        totalRatioNumber = sum(ratioNumber)
+        result = list(map(lambda x : math.floor(x / totalRatioNumber * actualSize), ratioNumber))
+        result[-1] += actualSize - sum(result)
+        return result
+        
+    def next(self):
+        self.birds.sort(key=lambda x : -x.score)
+        for bird in self.birds:
+            print(bird.score, end=' ')
+        print('\n')
+        
+        groupSplitNumber = self.split([30, 40, 30], self.birdsCount)
+        groupStartNumber = [0] + list(accumulate(groupSplitNumber))[:-1]
+        groupIndex = [ list(range(x, x+y)) for x, y in zip(groupStartNumber, groupSplitNumber) ]
+        
+        newPopulationCount = math.floor(self.birdsCount * 0.7)
+        populationSplitNumber = self.split([4, 3, 1], newPopulationCount)
+        crossing = [ [0, 0], [0, 1], [1, 2] ]
+        
+        newPopulation = []
+        for (x, y), pop in zip(crossing, populationSplitNumber):
+            iX, iY = BIRDS_COUNT + 1, BIRDS_COUNT + 1    
+            for i in range(pop):
+                if (iX >= groupSplitNumber[x]):
+                    xList = list(groupIndex[x])
+                    shuffle(xList)
+                    iX = 0
+                if (iY >= groupSplitNumber[y]):
+                    yList = list(groupIndex[y])
+                    shuffle(yList)
+                    iY = 0
+                newPopulation.append(self.birds[xList[iX]].birth(self.birds[yList[iY]]))
+                iX += 1
+                iY += 1
+                
+        shuffle(newPopulation)
+        
+        mutationCount = math.floor(self.birdsCount * 0.2)
+        for i in range(mutationCount):
+            newPopulation[i].mutate()
+        newPopulation.extend(self.birds[:self.birdsCount - math.floor(self.birdsCount * 0.8)])
+        for i in range(BIRDS_COUNT - len(newPopulation)):
+            newBird = Bird(self.birds[i].brain)
+            newBird.mutate()
+            newPopulation.append(newBird)
+            
+        return BirdsPopulation(self.birdsCount, newPopulation)
 
 
 class SoundEffectDump:
@@ -143,8 +305,18 @@ def main():
             getHitmask(IMAGES['player'][2]),
         )
 
-        movementInfo = initPosition()
-        crashInfo = mainGame(movementInfo)
+        global birds
+        global lastScore
+        birds = BirdsPopulation(BIRDS_COUNT)
+        generationCount = 1
+        while True:
+            lastScore = 0
+            print("=========== Generation - {} ===========".format(generationCount))
+            movementInfo = initPosition()
+            crashInfo = mainGame(movementInfo)
+            birds = birds.next()
+            generationCount += 1
+
         pygame.quit()
         sys.exit()
         #showGameOverScreen(crashInfo)
@@ -168,8 +340,11 @@ def initPosition():
     }
 
 def mainGame(movementInfo):
+    global birds
+
     loopIter = 0
-    score = playerIndex = [0] * BIRDS_COUNT
+    score = [0] * BIRDS_COUNT
+    playerIndex = [0] * BIRDS_COUNT
     playerIndexGen = [ movementInfo['playerIndexGen'] ] * BIRDS_COUNT
     playerx, playery = [ int(SCREENWIDTH * 0.2) ] * BIRDS_COUNT, [ movementInfo['playery'] ] * BIRDS_COUNT
 
@@ -206,7 +381,8 @@ def mainGame(movementInfo):
     playerFlapped = [False] * BIRDS_COUNT # True when player flaps
     playerDied    = [False] * BIRDS_COUNT
     playersLeft   = BIRDS_COUNT
-
+    
+    travelDistance = 0
     while True:
         for event in pygame.event.get():
             if event.type == QUIT or (event.type == KEYDOWN and event.key == K_ESCAPE):
@@ -219,9 +395,26 @@ def mainGame(movementInfo):
                     playerFlapped = True
                     SOUNDS['wing'].play()
             """
+        #print(playerx[0], (lowerPipes[1]['x'] if lowerPipes[0]['x'] + IMAGES['pipe'][0].get_width() < playerx[0] else lowerPipes[0]['x']) + IMAGES['pipe'][0].get_width())
+
         for i in range(BIRDS_COUNT):
             if playerDied[i]: continue
-            wannaJump = (random.randint(0, 8) == 0)
+
+            
+            upperX = lowerPipes[0]['x'] + IMAGES['pipe'][0].get_width()
+
+            if lowerPipes[0]['x'] + IMAGES['pipe'][0].get_width() < playerx[i]:
+                closeX = lowerPipes[1]['x'] + IMAGES['pipe'][0].get_width()
+                centerGapY = (lowerPipes[1]['y'] - (PIPEGAPSIZE / 2))
+            else:
+                closeX = lowerPipes[0]['x'] + IMAGES['pipe'][0].get_width()
+                centerGapY = (lowerPipes[0]['y'] - (PIPEGAPSIZE / 2))
+
+            data = [ [playery[i] - centerGapY, closeX - playerx[i]] ]
+            #result = regressor.predict(data)
+
+            #wannaJump = (sigmoid(result[0]) > 0.5)
+            wannaJump = birds[i].isJump(data)
             if wannaJump:
                 if playery[i] > -2 * IMAGES['player'][0].get_height():
                     playerVelY[i] = playerFlapAcc[i]
@@ -231,6 +424,7 @@ def mainGame(movementInfo):
             crashTest = checkCrash({'x': playerx[i], 'y': playery[i], 'index': playerIndex[i]},
                                    upperPipes, lowerPipes)
             if crashTest[0]:
+                birds[i].score = travelDistance * 100 + BASEY - abs(playery[i] - centerGapY)
                 playerDied[i] = True
                 playersLeft -= 1
                 if playersLeft == 0:
@@ -251,6 +445,7 @@ def mainGame(movementInfo):
                 pipeMidPos = pipe['x'] + IMAGES['pipe'][0].get_width() / 2
                 if pipeMidPos <= playerMidPos < pipeMidPos + 4:
                     score[i] += 1
+                    showScore(score[i])
                     #SOUNDS['point'].play()
 
             # playerIndex basex change
@@ -314,6 +509,7 @@ def mainGame(movementInfo):
             playerSurface = pygame.transform.rotate(IMAGES['player'][playerIndex[i]], visibleRot)
             SCREEN.blit(playerSurface, (playerx[i], playery[i]))
 
+        travelDistance += 1
 
         pygame.display.update()
         FPSCLOCK.tick(FPS)
@@ -361,7 +557,7 @@ def showScore(score):
         Xoffset += IMAGES['numbers'][digit].get_width()
     """
     global lastScore
-    if lastScore != score:
+    if lastScore < score:
         lastScore = score
         print(score)
 
