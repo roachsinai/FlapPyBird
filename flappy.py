@@ -61,7 +61,7 @@ from sklearn.neural_network import MLPRegressor
 
 import numpy as np
 from random import shuffle
-from itertools import accumulate
+from itertools import accumulate, count
 import math
 import copy
 
@@ -69,25 +69,9 @@ class Bird:
 
     def __init__(self, brain = None):
         
-
         if brain is None:
-            initDataX = [ [BASEY, 0], [-BASEY, 0], [BASEY, 200], [-BASEY, 200] ]
-            initDatay = [ 1, 0, 1, 0 ]
-            for i in range(50, int(BASEY), 100):
-                initDataX.append([i, 0])
-                initDatay.append(1)
-
-                initDataX.append([-i, 0])
-                initDatay.append(0)
-
-                initDataX.append([i, 100])
-                initDatay.append(1)
-
-                initDataX.append([-i, 100])
-                initDatay.append(0)
-
-                initDataX.append([-i, 150])
-                initDatay.append(0)
+            initDataX = [ [BASEY, 0], [-BASEY, 0] ]
+            initDatay = [ 1, 0 ]
 
             self.brain = MLPRegressor(hidden_layer_sizes=(6, ), max_iter=10)
             self.brain.fit(initDataX, initDatay)
@@ -178,6 +162,7 @@ class BirdsPopulation(list):
         
     def next(self):
         self.birds.sort(key=lambda x : -x.score)
+        print('fitness function: ', end='')
         for bird in self.birds:
             print(bird.score, end=' ')
         print('\n')
@@ -307,13 +292,18 @@ def main():
 
         global birds
         global lastScore
+        global fastForward
+        fastForward = False
         birds = BirdsPopulation(BIRDS_COUNT)
         generationCount = 1
+        bestScore = 0
         while True:
             lastScore = 0
             print("=========== Generation - {} ===========".format(generationCount))
             movementInfo = initPosition()
             crashInfo = mainGame(movementInfo)
+            bestScore = max(bestScore, lastScore)
+            print("=========== Best Score - {} ===========".format(bestScore))
             birds = birds.next()
             generationCount += 1
 
@@ -341,6 +331,7 @@ def initPosition():
 
 def mainGame(movementInfo):
     global birds
+    global playerDied
 
     loopIter = 0
     score = [0] * BIRDS_COUNT
@@ -382,12 +373,15 @@ def mainGame(movementInfo):
     playerDied    = [False] * BIRDS_COUNT
     playersLeft   = BIRDS_COUNT
     
+    global fastForward
     travelDistance = 0
     while True:
         for event in pygame.event.get():
             if event.type == QUIT or (event.type == KEYDOWN and event.key == K_ESCAPE):
                 pygame.quit()
                 sys.exit()
+            if event.type == KEYDOWN and (event.key == K_SPACE):
+                fastForward = not fastForward
             """
             if event.type == KEYDOWN and (event.key == K_SPACE or event.key == K_UP):
                 if playery > -2 * IMAGES['player'][0].get_height():
@@ -403,17 +397,15 @@ def mainGame(movementInfo):
             
             upperX = lowerPipes[0]['x'] + IMAGES['pipe'][0].get_width()
 
-            if lowerPipes[0]['x'] + IMAGES['pipe'][0].get_width() < playerx[i]:
-                closeX = lowerPipes[1]['x'] + IMAGES['pipe'][0].get_width()
-                centerGapY = (lowerPipes[1]['y'] - (PIPEGAPSIZE / 2))
-            else:
-                closeX = lowerPipes[0]['x'] + IMAGES['pipe'][0].get_width()
-                centerGapY = (lowerPipes[0]['y'] - (PIPEGAPSIZE / 2))
+            for j in count(0):
+                if lowerPipes[j]['x'] + IMAGES['pipe'][0].get_width() < playerx[i]:
+                    continue
+                closeX = lowerPipes[j]['x'] + IMAGES['pipe'][0].get_width()
+                centerGapY = (lowerPipes[j]['y'] - (PIPEGAPSIZE / 2))
+                break
 
             data = [ [playery[i] - centerGapY, closeX - playerx[i]] ]
-            #result = regressor.predict(data)
 
-            #wannaJump = (sigmoid(result[0]) > 0.5)
             wannaJump = birds[i].isJump(data)
             if wannaJump:
                 if playery[i] > -2 * IMAGES['player'][0].get_height():
@@ -424,6 +416,7 @@ def mainGame(movementInfo):
             crashTest = checkCrash({'x': playerx[i], 'y': playery[i], 'index': playerIndex[i]},
                                    upperPipes, lowerPipes)
             if crashTest[0]:
+                print('bird {} died with score {}'.format(i, score[i]))
                 birds[i].score = travelDistance * 100 + BASEY - abs(playery[i] - centerGapY)
                 playerDied[i] = True
                 playersLeft -= 1
@@ -512,7 +505,8 @@ def mainGame(movementInfo):
         travelDistance += 1
 
         pygame.display.update()
-        FPSCLOCK.tick(FPS)
+        if (not fastForward):
+            FPSCLOCK.tick(FPS)
 
 
 def playerShm(playerShm):
@@ -557,9 +551,11 @@ def showScore(score):
         Xoffset += IMAGES['numbers'][digit].get_width()
     """
     global lastScore
+    global playerDied
     if lastScore < score:
         lastScore = score
-        print(score)
+        playerIdx = [ idx for idx, x in enumerate(playerDied) if not x ]
+        print('current score = {}. still flapping = {}'.format(score, playerIdx))
 
 
 def checkCrash(player, upperPipes, lowerPipes):
