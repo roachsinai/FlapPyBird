@@ -64,16 +64,19 @@ from random import shuffle
 from itertools import accumulate, count
 import math
 import copy
+import pickle
+from pathlib import Path
 
 class Bird:
 
     def __init__(self, brain = None):
         
         if brain is None:
-            initDataX = [ [BASEY, 0], [-BASEY, 0] ]
+            # featurenya: diff y player dgn pipe terdekat, jarak dgn piper terdekat, diff y pipe terdekat dgn pipe berikutnya
+            initDataX = [ [BASEY / 2, 0, -BASEY / 2], [-BASEY / 2, 0, BASEY / 2] ]
             initDatay = [ 1, 0 ]
 
-            self.brain = MLPRegressor(hidden_layer_sizes=(6, ), max_iter=10)
+            self.brain = MLPRegressor(hidden_layer_sizes=(8, ), max_iter=10)
             self.brain.fit(initDataX, initDatay)
 
             self.brain.out_activation_ = "logistic"
@@ -89,16 +92,6 @@ class Bird:
     def decisionGenerator(self):
         count = 0
         dna = [0, 0, 1, 1]
-        while True:
-            if count <= 0:
-                shuffle(dna)
-                count = len(dna)
-            count -= 1
-            yield dna[count]
-
-    def mutateDecisionGenerator(self):
-        count = 0
-        dna = [0, 0, 1]
         while True:
             if count <= 0:
                 shuffle(dna)
@@ -127,18 +120,17 @@ class Bird:
         for ilyr in range(self.brain.n_layers_):
             for i in range(len(self.brain.coefs_)):
                 for j in range(len(self.brain.coefs_[i])):
-                    if next(self.mutateDecisionGenerator()):
-                        self.brain.coefs_[i][j] += random.randint(1, 10) / 10 * (next(self.decisionGenerator()) * 2 - 1)
+                    if random.randint(0, 2) == 0:
+                        self.brain.coefs_[i][j] += random.randint(1, 10) / 100 * (next(self.decisionGenerator()) * 2 - 1)
 
         for ilyr in range(self.brain.n_layers_):
             for i in range(len(self.brain.intercepts_)):
-                if next(self.mutateDecisionGenerator()):
-                    self.brain.intercepts_[i] += random.randint(1, 10) / 10 * (next(self.decisionGenerator()) * 2 - 1)
-
+                if random.randint(0, 2) == 0:
+                    self.brain.intercepts_[i] += random.randint(1, 10) / 100 * (next(self.decisionGenerator()) * 2 - 1)
 
 class BirdsPopulation(list):
 
-    def __init__(self, birdsCount = -1, birds = None):
+    def __init__(self, birdsCount = -1, birds = None, population = 1):
         if (birdsCount < 0):
             self.birdsCount = len(birds)
         else:
@@ -147,6 +139,9 @@ class BirdsPopulation(list):
             self.birds = [ Bird() for i in range(birdsCount) ]
         else:
             self.birds = birds
+
+        self.population = population
+        
 
     def __getitem__(self, key):
         return self.birds[key]
@@ -202,8 +197,18 @@ class BirdsPopulation(list):
             newBird.mutate()
             newPopulation.append(newBird)
             
-        return BirdsPopulation(self.birdsCount, newPopulation)
+        return BirdsPopulation(self.birdsCount, newPopulation, self.population + 1)
 
+def saveConfig(bp):
+    fout = open('saved.txt', 'wb')
+    pickle.dump(bp, fout)
+
+def loadConfig():
+    my_file = Path("saved.txt")
+    if my_file.exists():
+        fin = open('saved.txt', 'rb')
+        return pickle.load(fin)
+    return None
 
 class SoundEffectDump:
     
@@ -294,18 +299,20 @@ def main():
         global lastScore
         global fastForward
         fastForward = False
-        birds = BirdsPopulation(BIRDS_COUNT)
-        generationCount = 1
+        birds = loadConfig()
+        if (birds is None):
+            birds = BirdsPopulation(BIRDS_COUNT)
+        
         bestScore = 0
         while True:
+            saveConfig(birds)
             lastScore = 0
-            print("=========== Generation - {} ===========".format(generationCount))
+            print("=========== Generation - {} ===========".format(birds.population))
             movementInfo = initPosition()
             crashInfo = mainGame(movementInfo)
             bestScore = max(bestScore, lastScore)
             print("=========== Best Score - {} ===========".format(bestScore))
             birds = birds.next()
-            generationCount += 1
 
         pygame.quit()
         sys.exit()
@@ -328,6 +335,15 @@ def initPosition():
         'basex': basex,
         'playerIndexGen': playerIndexGen,
     }
+
+def yScoreFunc(playerY, lGapY, uGapY):
+    if lGapY <= playerY <= uGapY:
+        return 0
+    if (playerY < lGapY):
+        return lGapY - playerY
+    if (playerY > uGapY):
+        return playerY - uGapY
+    return 0
 
 def mainGame(movementInfo):
     global birds
@@ -397,14 +413,25 @@ def mainGame(movementInfo):
             
             upperX = lowerPipes[0]['x'] + IMAGES['pipe'][0].get_width()
 
-            for j in count(0):
+            closeX = SCREENWIDTH
+            centerGapY = SCREENHEIGHT / 2
+            nextCenterGapY = 0
+            for j in range(len(lowerPipes)):
                 if lowerPipes[j]['x'] + IMAGES['pipe'][0].get_width() < playerx[i]:
+                    continue
+                if lowerPipes[j]['x'] > SCREENWIDTH:
                     continue
                 closeX = lowerPipes[j]['x'] + IMAGES['pipe'][0].get_width()
                 centerGapY = (lowerPipes[j]['y'] - (PIPEGAPSIZE / 2))
+                if j < len(lowerPipes) and lowerPipes[j + 1]['x'] <= SCREENWIDTH:
+                    nextCenterGapY = (lowerPipes[j + 1]['y'] - (PIPEGAPSIZE / 2))
                 break
 
-            data = [ [playery[i] - centerGapY, closeX - playerx[i]] ]
+            #if i == 0:
+                #print(closeX, centerGapY, nextCenterGapY)
+                #print(nextCloseX, nextCenterGapY)
+
+            data = [ [playery[i] - centerGapY, closeX - playerx[i], centerGapY - nextCenterGapY] ]
 
             wannaJump = birds[i].isJump(data)
             if wannaJump:
@@ -416,8 +443,10 @@ def mainGame(movementInfo):
             crashTest = checkCrash({'x': playerx[i], 'y': playery[i], 'index': playerIndex[i]},
                                    upperPipes, lowerPipes)
             if crashTest[0]:
+                playerHeight = IMAGES['player'][playerIndex[i]].get_height()
+
                 print('bird {} died with score {}'.format(i, score[i]))
-                birds[i].score = travelDistance * 100 + BASEY - abs(playery[i] - centerGapY)
+                birds[i].score = travelDistance * 100 - yScoreFunc(playery[i] + playerHeight / 2, centerGapY - (PIPEGAPSIZE / 2), centerGapY + (PIPEGAPSIZE / 2))
                 playerDied[i] = True
                 playersLeft -= 1
                 if playersLeft == 0:
