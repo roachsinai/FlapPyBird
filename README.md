@@ -1,28 +1,21 @@
-FlappyBirdClone
-===============
+Flappy Bird with Genetic Algorithm
+==================================
 
-A Flappy Bird Clone made using [python-pygame][1]
+Flappy Birds Flap Decision using Genetic Algorithm
 
 How-to
 ------
 
-1. Install Python 2.7.X or 3.5.x from [here](https://www.python.org/download/releases/)
+1. Install Python 3.x from [here](https://www.python.org/download/releases/)
 
-2. Install PyGame 1.9.X from [here](http://www.pygame.org/download.shtml)
+2. Clone this repository: `https://github.com/tiok-cek1/flappy-bird-genetic-algorithm.git` or click `Download ZIP` in right panel and extract it.
 
-3. Clone this repository: `git clone https://github.com/sourabhv/FlappyBirdClone.git` or click `Download ZIP` in right panel and extract it.
+3. create virtual environment `cd flappy-bird-genetic-algorithm` then `virtualenv .`
 
-4. Run `python flappy.py` from the repo's directory
+4. enter environment `source bin/activate` for \*NIX. `Scripts\activate` for Windows.
 
-5. use <kbd>&uarr;</kbd> or <kbd>Space</kbd> key to play and <kbd>Esc</kbd> to close the game.
+5. install requirements `pip install -r requirements.txt`
 
-  (Note: Install pyGame for same version python as above)
+6. Run `python flappy.py` from the repo's directory
 
-  (For x64 windows, get exe [here](http://www.lfd.uci.edu/~gohlke/pythonlibs/#pygame))
-
-ScreenShot
-----------
-
-![Flappy Bird](screenshot1.png)
-
-[1]: http://www.pygame.org
+7. use <kbd>Space</kbd> key to fast forward and <kbd>Esc</kbd> to close the game.
