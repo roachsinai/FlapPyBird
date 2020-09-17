@@ -222,7 +222,7 @@ def main():
     IMAGES['gameover'] = pygame.image.load('assets/sprites/gameover.png').convert_alpha()
     # message sprite for welcome screen
     IMAGES['message'] = pygame.image.load('assets/sprites/message.png').convert_alpha()
-    # base (ground) sprite
+    # base (ground) sprite 地面的移动效果
     IMAGES['base'] = pygame.image.load('assets/sprites/base.png').convert_alpha()
 
     # sounds
@@ -252,7 +252,7 @@ def main():
     )
 
     # select random pipe sprites
-    #pipeindex = random.randint(0, len(PIPES_LIST) - 1)
+    # pipeindex = random.randint(0, len(PIPES_LIST) - 1)
     pipeindex = 0
     IMAGES['pipe'] = (
         pygame.transform.rotate(
@@ -314,6 +314,7 @@ def initPosition():
     basex = 0
 
     # player shm for up-down motion on welcome screen
+    # val: 小鸟初始位置 dir: 小鸟每次 up-down 的像素
     playerShmVals = {'val': 0, 'dir': 1}
 
     return {
@@ -343,6 +344,8 @@ def mainGame(movementInfo):
     playerx, playery = [ int(SCREENWIDTH * 0.2) ] * BIRDS_COUNT, [ movementInfo['playery'] ] * BIRDS_COUNT
 
     basex = movementInfo['basex']
+    # base（地面）比 background（背景）要长，移动效果就是 base 一直向左移动
+    # baseShift 就是 base 可以向左移动的最大长度，不然就会出现黑色空洞
     baseShift = IMAGES['base'].get_width() - IMAGES['background'].get_width()
 
     # get 2 new pipes to add to upperPipes lowerPipes list
@@ -355,7 +358,7 @@ def mainGame(movementInfo):
         {'x': SCREENWIDTH + 200 + (SCREENWIDTH / 2), 'y': newPipe2[0]['y']},
     ]
 
-    # list of lowerpipe
+    # list of lower pipes
     lowerPipes = [
         {'x': SCREENWIDTH + 200, 'y': newPipe1[1]['y']},
         {'x': SCREENWIDTH + 200 + (SCREENWIDTH / 2), 'y': newPipe2[1]['y']},
@@ -392,7 +395,7 @@ def mainGame(movementInfo):
                     playerFlapped = True
                     SOUNDS['wing'].play()
             """
-        #print(playerx[0], (lowerPipes[1]['x'] if lowerPipes[0]['x'] + IMAGES['pipe'][0].get_width() < playerx[0] else lowerPipes[0]['x']) + IMAGES['pipe'][0].get_width())
+        # print(playerx[0], (lowerPipes[1]['x'] if lowerPipes[0]['x'] + IMAGES['pipe'][0].get_width() < playerx[0] else lowerPipes[0]['x']) + IMAGES['pipe'][0].get_width())
 
         for i in range(BIRDS_COUNT):
             if playerDied[i]: continue
@@ -514,6 +517,7 @@ def mainGame(movementInfo):
                 playerRot[i] = 45
 
             playerHeight = IMAGES['player'][playerIndex[i]].get_height()
+            # 后面的是不让小鸟跌落到base图像（地面）上。
             playery[i] += min(playerVelY[i], BASEY - playery[i] - playerHeight)
 
             # Player rotation has a threshold
@@ -632,7 +636,10 @@ def pixelCollision(rect1, rect2, hitmask1, hitmask2):
     return False
 
 def getHitmask(image):
-    """returns a hitmask using an image's alpha."""
+    """
+    返回图片的alpha通道的值。即使用图片的alpha通道的值作为mask。
+    如果在两个精灵重叠区域（碰撞区域）中，存在两个精灵的alpha值都不为零的位置说明发生了碰撞。
+    """
     mask = []
     for x in xrange(image.get_width()):
         mask.append([])
