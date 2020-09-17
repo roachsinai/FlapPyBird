@@ -1,0 +1,22 @@
+{
+  "configurations": {
+    "Launch": {
+      "adapter": "debugpy",
+      "configuration": {
+        "type": "python",
+        "request": "launch",
+        "cwd": "${workspaceRoot}",
+        "stopOnEntry": true,
+        "externalConsole": false,
+        "console": "integratedTerminal",
+        "program": "${file}"
+      },
+      "breakpoints": {
+        "exception": {
+          "raised": "",
+          "uncaught": "Y"
+        }
+      }
+    }
+  }
+}

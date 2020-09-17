@@ -49,7 +49,11 @@ PIPES_LIST = (
     'assets/sprites/pipe-red.png',
 )
 
-BIRDS_COUNT = 20
+BIRDS_COUNT = 21
+MAX_ITEA = 120
+MAX_SCORE = 1000
+PM = 0.5
+dump_file = f"iter-MAX_ITEA.plot"
 
 try:
     xrange
@@ -70,10 +74,10 @@ from pathlib import Path
 class Bird:
 
     def __init__(self, brain = None):
-        
+
         if brain is None:
             # featurenya: diff y player dgn pipe terdekat, jarak dgn piper terdekat, diff y pipe terdekat dgn pipe berikutnya
-            initDataX = [ [BASEY / 2, 0, -BASEY / 2], [-BASEY / 2, 0, BASEY / 2] ]
+            initDataX = [ [BASEY / 2, 0, BASEY / 2], [-BASEY / 2, 0, -BASEY / 2] ]
             initDatay = [ 1, 0 ]
 
             self.brain = MLPRegressor(hidden_layer_sizes=(8, ), max_iter=10)
@@ -89,48 +93,34 @@ class Bird:
         yPredict = self.brain.predict(X)
         return yPredict[0] > 0.5
 
-    def decisionGenerator(self):
-        count = 0
-        dna = [0, 0, 1, 1]
-        while True:
-            if count <= 0:
-                shuffle(dna)
-                count = len(dna)
-            count -= 1
-            yield dna[count]
-
     # cross over
-    def birth(self, other):
-        son = Bird(self.brain)
+    def cross_over(self, other):
+        for i in range(self.brain.n_layers_ - 1):
+            for j in range(len(self.brain.coefs_[i])):
+                for k in range(len(self.brain.coefs_[i][j])):
+                    if random.uniform(0, 1) <= .5:
+                        self.brain.coefs_[i][j][k], other.brain.coefs_[i][j][k] = other.brain.coefs_[i][j][k], self.brain.coefs_[i][j][k]
 
-        for ilyr in range(self.brain.n_layers_):
-            for i in range(len(self.brain.coefs_)):
-                for j in range(len(self.brain.coefs_[i])):
-                    if next(self.decisionGenerator()):
-                        son.brain.coefs_[i][j] = other.brain.coefs_[i][j]
+        for i in range(self.brain.n_layers_ - 1):
+            for j in range(len(self.brain.intercepts_[i])):
+                if random.uniform(0, 1) <= .5:
+                        self.brain.intercepts_[i][j], other.brain.intercepts_[i][j] = other.brain.intercepts_[i][j], self.brain.intercepts_[i][j]
 
-        for ilyr in range(self.brain.n_layers_):
-            for i in range(len(self.brain.intercepts_)):
-                if next(self.decisionGenerator()):
-                    son.brain.intercepts_[i] = other.brain.intercepts_[i]
+    def mutate(self, pm):
+        for i in range(self.brain.n_layers_ - 1):
+            for j in range(len(self.brain.coefs_[i])):
+                for k in range(len(self.brain.coefs_[i][j])):
+                    if random.uniform(0, 1) <= pm:
+                        self.brain.coefs_[i][j][k] += random.randint(1, 10) / 100 * (round(random.uniform(0, 1)) * 2 - 1)
 
-        return son
-
-    def mutate(self):
-        for ilyr in range(self.brain.n_layers_):
-            for i in range(len(self.brain.coefs_)):
-                for j in range(len(self.brain.coefs_[i])):
-                    if random.randint(0, 2) == 0:
-                        self.brain.coefs_[i][j] += random.randint(1, 10) / 100 * (next(self.decisionGenerator()) * 2 - 1)
-
-        for ilyr in range(self.brain.n_layers_):
-            for i in range(len(self.brain.intercepts_)):
-                if random.randint(0, 2) == 0:
-                    self.brain.intercepts_[i] += random.randint(1, 10) / 100 * (next(self.decisionGenerator()) * 2 - 1)
+        for i in range(self.brain.n_layers_ - 1):
+            for j in range(len(self.brain.intercepts_[i])):
+                if random.uniform(0, 1) <= pm:
+                    self.brain.intercepts_[i][j] += random.randint(1, 10) / 100 * (round(random.uniform(0, 1)) * 2 - 1)
 
 class BirdsPopulation(list):
 
-    def __init__(self, birdsCount = -1, birds = None, population = 1):
+    def __init__(self, birdsCount = -1, birds = None, generation_counts = 1):
         if (birdsCount < 0):
             self.birdsCount = len(birds)
         else:
@@ -140,8 +130,8 @@ class BirdsPopulation(list):
         else:
             self.birds = birds
 
-        self.population = population
-        
+        self.generation_counts = generation_counts
+
 
     def __getitem__(self, key):
         return self.birds[key]
@@ -149,69 +139,58 @@ class BirdsPopulation(list):
     def __setitem__(self, key, item):
         self.birds[key] = item
 
-    def split(self, ratioNumber, actualSize):
-        totalRatioNumber = sum(ratioNumber)
-        result = list(map(lambda x : math.floor(x / totalRatioNumber * actualSize), ratioNumber))
-        result[-1] += actualSize - sum(result)
-        return result
-        
     def next(self):
         self.birds.sort(key=lambda x : -x.score)
+        self.best_one = self.birds[0]
         print('fitness function: ', end='')
         for bird in self.birds:
             print(bird.score, end=' ')
         print('\n')
-        
-        groupSplitNumber = self.split([30, 40, 30], self.birdsCount)
-        groupStartNumber = [0] + list(accumulate(groupSplitNumber))[:-1]
-        groupIndex = [ list(range(x, x+y)) for x, y in zip(groupStartNumber, groupSplitNumber) ]
-        
-        newPopulationCount = math.floor(self.birdsCount * 0.7)
-        populationSplitNumber = self.split([4, 3, 1], newPopulationCount)
-        crossing = [ [0, 0], [0, 1], [1, 2] ]
-        
+
+        # roulette
+        sum_scores = [int(bird.score) if bird.score > 0 else 0 for bird in self.birds]
+        for idx in range(1, len(sum_scores)):
+            sum_scores[idx] += sum_scores[idx - 1]
+
         newPopulation = []
-        for (x, y), pop in zip(crossing, populationSplitNumber):
-            iX, iY = BIRDS_COUNT + 1, BIRDS_COUNT + 1    
-            for i in range(pop):
-                if (iX >= groupSplitNumber[x]):
-                    xList = list(groupIndex[x])
-                    shuffle(xList)
-                    iX = 0
-                if (iY >= groupSplitNumber[y]):
-                    yList = list(groupIndex[y])
-                    shuffle(yList)
-                    iY = 0
-                newPopulation.append(self.birds[xList[iX]].birth(self.birds[yList[iY]]))
-                iX += 1
-                iY += 1
-                
-        shuffle(newPopulation)
-        
-        mutationCount = math.floor(self.birdsCount * 0.2)
-        for i in range(mutationCount):
-            newPopulation[i].mutate()
-        newPopulation.extend(self.birds[:self.birdsCount - math.floor(self.birdsCount * 0.8)])
-        for i in range(BIRDS_COUNT - len(newPopulation)):
-            newBird = Bird(self.birds[i].brain)
-            newBird.mutate()
-            newPopulation.append(newBird)
-            
-        return BirdsPopulation(self.birdsCount, newPopulation, self.population + 1)
+        population_idx = []
+        for bird in range(self.birdsCount - 1):
+            dart = random.randint(1, sum_scores[-1])
+            for idx, sum_score in enumerate(sum_scores):
+                if dart <= sum_score:
+                    break
+            newPopulation.append(copy.deepcopy(self.birds[idx]))
+            population_idx.append(idx)
+
+        # cross_over
+        for idx in range(0, len(newPopulation) - 1, 2):
+            # print(newPopulation[idx].brain.coefs_)
+            # print(newPopulation[idx + 1].brain.coefs_)
+            newPopulation[idx].cross_over(newPopulation[idx + 1])
+
+        # mutate
+        # print(PM * (MAX_ITEA - self.generation_counts) / MAX_ITEA)
+        for new_bird in newPopulation:
+            new_bird.mutate(PM * (MAX_ITEA - self.generation_counts) / MAX_ITEA)
+
+        # add best bird of last population
+        newPopulation.append(self.best_one)
+
+        return BirdsPopulation(self.birdsCount, newPopulation, self.generation_counts + 1)
 
 def saveConfig(bp):
-    fout = open('saved.txt', 'wb')
+    fout = open(f'latest_birds_config.txt', 'wb')
     pickle.dump(bp, fout)
 
 def loadConfig():
-    my_file = Path("saved.txt")
+    my_file = Path(f'latest_birds_config.txt')
     if my_file.exists():
-        fin = open('saved.txt', 'rb')
+        fin = open(f'latest_birds_config.txt', 'rb')
         return pickle.load(fin)
     return None
 
 class SoundEffectDump:
-    
+
     def play(self):
         print(self.msg)
 
@@ -258,65 +237,72 @@ def main():
     SOUNDS['swoosh'] = SoundEffectDump("swoosh")
     SOUNDS['wing']   = SoundEffectDump("wing")
 
-    while True:
-        # select random background sprites
-        randBg = 0
-        #randBg = random.randint(0, len(BACKGROUNDS_LIST) - 1)
-        IMAGES['background'] = pygame.image.load(BACKGROUNDS_LIST[randBg]).convert()
+    # select random background sprites
+    randBg = 0
+    #randBg = random.randint(0, len(BACKGROUNDS_LIST) - 1)
+    IMAGES['background'] = pygame.image.load(BACKGROUNDS_LIST[randBg]).convert()
 
-        # select random player sprites
-        #randPlayer = random.randint(0, len(PLAYERS_LIST) - 1)
-        randPlayer = 0
-        IMAGES['player'] = (
-            pygame.image.load(PLAYERS_LIST[randPlayer][0]).convert_alpha(),
-            pygame.image.load(PLAYERS_LIST[randPlayer][1]).convert_alpha(),
-            pygame.image.load(PLAYERS_LIST[randPlayer][2]).convert_alpha(),
-        )
+    # select random player sprites
+    #randPlayer = random.randint(0, len(PLAYERS_LIST) - 1)
+    randPlayer = 0
+    IMAGES['player'] = (
+        pygame.image.load(PLAYERS_LIST[randPlayer][0]).convert_alpha(),
+        pygame.image.load(PLAYERS_LIST[randPlayer][1]).convert_alpha(),
+        pygame.image.load(PLAYERS_LIST[randPlayer][2]).convert_alpha(),
+    )
 
-        # select random pipe sprites
-        #pipeindex = random.randint(0, len(PIPES_LIST) - 1)
-        pipeindex = 0
-        IMAGES['pipe'] = (
-            pygame.transform.rotate(
-                pygame.image.load(PIPES_LIST[pipeindex]).convert_alpha(), 180),
-            pygame.image.load(PIPES_LIST[pipeindex]).convert_alpha(),
-        )
+    # select random pipe sprites
+    #pipeindex = random.randint(0, len(PIPES_LIST) - 1)
+    pipeindex = 0
+    IMAGES['pipe'] = (
+        pygame.transform.rotate(
+            pygame.image.load(PIPES_LIST[pipeindex]).convert_alpha(), 180),
+        pygame.image.load(PIPES_LIST[pipeindex]).convert_alpha(),
+    )
 
-        # hismask for pipes
-        HITMASKS['pipe'] = (
-            getHitmask(IMAGES['pipe'][0]),
-            getHitmask(IMAGES['pipe'][1]),
-        )
+    # hismask for pipes
+    HITMASKS['pipe'] = (
+        getHitmask(IMAGES['pipe'][0]),
+        getHitmask(IMAGES['pipe'][1]),
+    )
 
-        # hitmask for player
-        HITMASKS['player'] = (
-            getHitmask(IMAGES['player'][0]),
-            getHitmask(IMAGES['player'][1]),
-            getHitmask(IMAGES['player'][2]),
-        )
+    # hitmask for player
+    HITMASKS['player'] = (
+        getHitmask(IMAGES['player'][0]),
+        getHitmask(IMAGES['player'][1]),
+        getHitmask(IMAGES['player'][2]),
+    )
 
-        global birds
-        global lastScore
-        global fastForward
-        fastForward = False
-        birds = loadConfig()
-        if (birds is None):
-            birds = BirdsPopulation(BIRDS_COUNT)
-        
-        bestScore = 0
-        while True:
-            saveConfig(birds)
-            lastScore = 0
-            print("=========== Generation - {} ===========".format(birds.population))
-            movementInfo = initPosition()
-            crashInfo = mainGame(movementInfo)
-            bestScore = max(bestScore, lastScore)
-            print("=========== Best Score - {} ===========".format(bestScore))
-            birds = birds.next()
+    global birds
+    global lastScore
+    global fastForward
+    fastForward = False
+    birds = loadConfig()
+    if (birds is None):
+        birds = BirdsPopulation(BIRDS_COUNT)
 
-        pygame.quit()
-        sys.exit()
-        #showGameOverScreen(crashInfo)
+    bestScore = 0
+    # while True:
+    best_score_each_iter = [0] * MAX_ITEA
+    for iter in range(MAX_ITEA):
+        saveConfig(birds)
+        # update each iteration
+        lastScore = 0
+        print("=========== Generation - {} ===========".format(birds.generation_counts))
+        movementInfo = initPosition()
+        crashInfo = mainGame(movementInfo)
+        bestScore = max(bestScore, lastScore)
+        print("=========== Best Score - {} ===========".format(bestScore))
+        if bestScore == MAX_SCORE:
+            best_score_each_iter[iter:MAX_ITEA] = [lastScore] * (MAX_ITEA - iter)
+            break
+        birds = birds.next()
+
+    with open(f"iter-{MAX_ITEA}.txt", 'wb') as f:
+        pickle.dump(dump_file)
+    pygame.quit()
+    sys.exit()
+    #showGameOverScreen(crashInfo)
 
 
 def initPosition():
@@ -348,6 +334,7 @@ def yScoreFunc(playerY, lGapY, uGapY):
 def mainGame(movementInfo):
     global birds
     global playerDied
+    global lastScore
 
     loopIter = 0
     score = [0] * BIRDS_COUNT
@@ -388,7 +375,7 @@ def mainGame(movementInfo):
     playerFlapped = [False] * BIRDS_COUNT # True when player flaps
     playerDied    = [False] * BIRDS_COUNT
     playersLeft   = BIRDS_COUNT
-    
+
     global fastForward
     travelDistance = 0
     while True:
@@ -410,11 +397,14 @@ def mainGame(movementInfo):
         for i in range(BIRDS_COUNT):
             if playerDied[i]: continue
 
-            
+
             upperX = lowerPipes[0]['x'] + IMAGES['pipe'][0].get_width()
 
+            # 小鸟与当前即将通过的管道的水平距离（管道右侧）
             closeX = SCREENWIDTH
+            # 小鸟与当前即将通过的管道的gap中心所在的高度
             centerGapY = SCREENHEIGHT / 2
+            # 小鸟与下一个即将通过的管道的gap中心所在的高度
             nextCenterGapY = 0
             for j in range(len(lowerPipes)):
                 if lowerPipes[j]['x'] + IMAGES['pipe'][0].get_width() < playerx[i]:
@@ -423,7 +413,7 @@ def mainGame(movementInfo):
                     continue
                 closeX = lowerPipes[j]['x'] + IMAGES['pipe'][0].get_width()
                 centerGapY = (lowerPipes[j]['y'] - (PIPEGAPSIZE / 2))
-                if j < len(lowerPipes) and lowerPipes[j + 1]['x'] <= SCREENWIDTH:
+                if j < len(lowerPipes) and j + 1 < len(lowerPipes) and lowerPipes[j + 1]['x'] <= SCREENWIDTH:
                     nextCenterGapY = (lowerPipes[j + 1]['y'] - (PIPEGAPSIZE / 2))
                 break
 
@@ -449,7 +439,7 @@ def mainGame(movementInfo):
                 birds[i].score = travelDistance * 100 - yScoreFunc(playery[i] + playerHeight / 2, centerGapY - (PIPEGAPSIZE / 2), centerGapY + (PIPEGAPSIZE / 2))
                 playerDied[i] = True
                 playersLeft -= 1
-                if playersLeft == 0:
+                if playersLeft == 0 or lastScore == MAX_SCORE:
                     return {
                         'y': playery,
                         'groundCrash': crashTest[1],
@@ -461,13 +451,16 @@ def mainGame(movementInfo):
                         'playerRot': playerRot
                     }
 
-            # check for score
+            # check for score of each bird
             playerMidPos = playerx[i] + IMAGES['player'][0].get_width() / 2
             for pipe in upperPipes:
                 pipeMidPos = pipe['x'] + IMAGES['pipe'][0].get_width() / 2
                 if pipeMidPos <= playerMidPos < pipeMidPos + 4:
                     score[i] += 1
-                    showScore(score[i])
+                    if lastScore < score[i]:
+                        lastScore = score[i]
+                        playerIdx = [ idx for idx, x in enumerate(playerDied) if not x ]
+                        print('current score = {}. still flapping = {}'.format(score[i], playerIdx))
                     #SOUNDS['point'].play()
 
             # playerIndex basex change
@@ -527,7 +520,7 @@ def mainGame(movementInfo):
             visibleRot = playerRotThr[i]
             if playerRot[i] <= playerRotThr[i]:
                 visibleRot = playerRot[i]
-            
+
             playerSurface = pygame.transform.rotate(IMAGES['player'][playerIndex[i]], visibleRot)
             SCREEN.blit(playerSurface, (playerx[i], playery[i]))
 
